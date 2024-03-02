@@ -1,0 +1,269 @@
+	.EQU	ADC_PORT=PORTA
+	.EQU	ADC_DR=DDRA
+	.EQU	ADC_IN=PINA
+	.EQU	TF=31249			;giá tr? ??t tr??c OCR1A/B t?o tr? 1s
+	.ORG	0
+	RJMP	MAIN
+	.ORG	0X40
+MAIN:	
+	LDI		R16,HIGH(RAMEND);??a stack lên vùng ?/c cao
+	OUT		SPH,R16
+	LDI		R16,LOW(RAMEND)
+	OUT		SPL,R16
+
+	RCALL	USART_Init
+
+	LDI		R16,0XFF			;PortD,B output
+	;OUT		DDRD,R16		
+	OUT		DDRB,R16
+
+	LDI		R16,0X00			;PortA input
+	OUT		ADC_DR,R16
+	;OUT		PORTD,R16			;output=0x0000
+	OUT		PORTB,R16
+			
+	LDI		R16,HIGH(TF)		;n?p OCR1A/B byte cao giá tr? ??t tr??c
+	STS		OCR1AH,R16
+	STS		OCR1BH,R16
+		
+	LDI		R16,LOW(TF)		;n?p OCR1A/B byte th?p giá tr? ??t tr??c
+	STS		OCR1AL,R16
+	STS		OCR1BL,R16
+					
+	LDI		R16,0X00			;Timer1 mode CTC 4
+	STS		TCCR1A,R16
+	LDI		R16,0B00001100	;Timer1 mode CTC 4,N=256,ch?y Timer1
+	STS		TCCR1B,R16
+		
+	LDI		R16,0B01000001	; Vref=AVcc=5V,SE ADC1,x1,d?ch ph?i
+	STS		ADMUX,R16		;
+	
+	LDI		R16,0B10100110	;cho phép ADC,mode t? kích
+	STS		ADCSRA,R16		;f(ADC)=fosc/64=125Khz
+
+	LDI		R16,0X05			;ngu?n t?o kích OCF1B
+	STS		ADCSRB,R16
+LOOP_1:
+	LDS		R16,ADCSRA		;??c c? ADIF
+	SBRS	R16,ADIF			;c? ADIF=1 chuy?n ??i xong
+	RJMP	LOOP_1				;ch? c? ADIF=1	
+	;Xu ly sau khi ADC hoat dong xong
+	STS		ADCSRA,R16		;xóa c? ADIF
+	SBI		PINB,0
+	;Hien thi gia tri len LCD: V1=x.xx volt
+	;V1=ADCH:ADCL*Vref/1024
+
+	RCALL DISPLAY_V
+			
+	IN		R17,TIFR1			;??c c? OCF1A
+	OUT		TIFR1,R17			;xóa c? OCF1A n?u =1
+	RJMP	LOOP_1				;ti?p t?c chuy?n ??i
+
+
+;init UART 0
+;CPU clock is 8Mhz
+USART_Init:
+    ; Set baud rate to 9600 bps with 8MHz clock
+    LDI	R16, 103
+    STS	UBRR0L, R16
+	;set double speed
+    LDI	R16,(1 << U2X0)
+    STS	UCSR0A,R16
+    ; Set frame format: 8 data bits, no parity, 1 stop bit
+    LDI	R16,(1 << UCSZ01) | (1 << UCSZ00)
+    STS	UCSR0C,R16
+    ; Enable transmitter and receiver
+    LDI	R16,(1 << RXEN0) | (1 << TXEN0)
+    STS	UCSR0B,R16
+    RET
+
+;send out 1 byte in r16
+USART_SendChar:
+    PUSH	R17
+    ; Wait for the transmitter to be ready
+    USART_SendChar_Wait:
+    LDS	R17,UCSR0A
+    SBRS	R17,UDRE0		;check USART Data Register Empty bit
+    RJMP	USART_SendChar_Wait
+    STS	UDR0,R16		;send out
+    POP	R17
+    RET
+
+;receive 1 byte in r16
+USART_ReceiveChar:
+    PUSH	R17
+    ; Wait for the transmitter to be ready
+    USART_ReceiveChar_Wait:
+    LDS	R17,UCSR0A
+    SBRS	R17, RXC0	;check USART Receive Complete bit
+    RJMP	USART_ReceiveChar_Wait
+    LDS	R16,UDR0		;get data
+    POP	R17
+    RET
+;-------------
+;Display
+DISPLAY_V:
+;A*Vref = A*5
+	LDS AL,ADCL
+	LDS AH,ADCH
+	LDI BL,LOW(5)       ;Load multiplier into BH:BL
+    LDI BH,HIGH(5)      ;
+	RCALL MUL16x16		;Ket qua: R21,R20
+;V=x.----------------------------------------------------------------------------------------
+	;A*5/1024
+	;Ketqua: R0:gia tri dung, xuat ra LCD. R2,R3 so du.
+	MOV AL,R20
+	MOV AH,R21
+	LDI BL,LOW(1024)       ;Load multiplier into BH:BL
+    LDI BH,HIGH(1024)      ;
+	RCALL DIV1616
+
+	;Xuat so x._
+	MOV		R16,R0
+	LDI		R17,0x30
+	ADD		R16,R17
+	RCALL	USART_SendChar
+
+	LDI		R16,46	;dau "."
+	RCALL	USART_SendChar
+;V=x.x----------------------------------------------------------------------------------------
+	;So du*10
+	MOV AL,R2
+	MOV AH,R3
+	LDI BL,LOW(10)       ;Load multiplier into BH:BL
+    LDI BH,HIGH(10)      ;
+	RCALL MUL16x16		;Ket qua: R21,R20
+
+	;So du*10/1024
+	;Ketqua: R0:gia tri dung, xuat ra LCD. R2,R3 so du.
+	MOV AL,R20
+	MOV AH,R21
+	LDI BL,LOW(1024)       ;Load multiplier into BH:BL
+    LDI BH,HIGH(1024)      ;
+	RCALL DIV1616
+
+	;Xuat so _.x
+	MOV		R16,R0
+	LDI		R17,0x30
+	ADD		R16,R17
+	RCALL	USART_SendChar
+;V=x.xx----------------------------------------------------------------------------------------
+	;So du*10
+	MOV AL,R2
+	MOV AH,R3
+	LDI BL,LOW(10)       ;Load multiplier into BH:BL
+    LDI BH,HIGH(10)      ;
+	RCALL MUL16x16		;Ket qua: R21,R20
+
+	;So du*10/1024
+	;Ketqua: R0:gia tri dung, xuat ra LCD. R2,R3 so du.
+	MOV AL,R20
+	MOV AH,R21
+	LDI BL,LOW(1024)       ;Load multiplier into BH:BL
+    LDI BH,HIGH(1024)      ;
+	RCALL DIV1616
+
+	;Xuat so _._x
+	MOV		R16,R0
+	LDI		R17,0x30
+	ADD		R16,R17
+	RCALL	USART_SendChar
+;V=x.xxx----------------------------------------------------------------------------------------
+	;So du*10
+	MOV AL,R2
+	MOV AH,R3
+	LDI BL,LOW(10)       ;Load multiplier into BH:BL
+    LDI BH,HIGH(10)      ;
+	RCALL MUL16x16		;Ket qua: R21,R20
+
+	;So du*10/1024
+	;Ketqua: R0:gia tri dung, xuat ra LCD. R2,R3 so du.
+	MOV AL,R20
+	MOV AH,R21
+	LDI BL,LOW(1024)       ;Load multiplier into BH:BL
+    LDI BH,HIGH(1024)      ;
+	RCALL DIV1616
+
+	;Xuat gia tri _.__x
+	MOV		R16,R0
+	LDI		R17,0x30
+	ADD		R16,R17
+	RCALL	USART_SendChar
+
+	;Xuong dong
+	LDI		R16,0x0A
+	RCALL	USART_SendChar	
+	LDI		R16,0x0D
+	RCALL	USART_SendChar
+RET
+
+;-----------------------------------------------------------------------------
+.DEF ZERO = R2               ;To hold Zero
+/*.DEF   AL = R16              ;To hold multiplicand
+.DEF   AH = R17
+.DEF   BL = R18              ;To hold multiplier
+.DEF   BH = R19*/
+.DEF ANS1 = R20              ;To hold 32 bit answer
+.DEF ANS2 = R21
+.DEF ANS3 = R22
+.DEF ANS4 = R23
+
+        LDI AL,LOW(42)       ;Load multiplicand into AH:AL
+        LDI AH,HIGH(42)      ;
+        LDI BL,LOW(10)       ;Load multiplier into BH:BL
+        LDI BH,HIGH(10)      ;
+
+MUL16x16:
+        CLR ZERO             ;Set R2 to zero
+        MUL AH,BH            ;Multiply high bytes AHxBH
+        MOVW ANS4:ANS3,R1:R0 ;Move two-byte result into answer
+
+        MUL AL,BL            ;Multiply low bytes ALxBL
+        MOVW ANS2:ANS1,R1:R0 ;Move two-byte result into answer
+
+        MUL AH,BL            ;Multiply AHxBL
+        ADD ANS2,R0          ;Add result to answer
+        ADC ANS3,R1          ;
+        ADC ANS4,ZERO        ;Add the Carry Bit
+
+        MUL BH,AL            ;Multiply BHxAL
+        ADD ANS2,R0          ;Add result to answer
+        ADC ANS3,R1          ;
+        ADC ANS4,ZERO        ;Add the Carry Bit
+RET
+;-----------------------------------------------------------------------------
+.DEF ANSL = R0            ;To hold low-byte of answer
+.DEF ANSH = R1            ;To hold high-byte of answer     
+.DEF REML = R2            ;To hold low-byte of remainder
+.DEF REMH = R3            ;To hold high-byte of remainder
+.DEF   AL = R16           ;To hold low-byte of dividend
+.DEF   AH = R17           ;To hold high-byte of dividend
+.DEF   BL = R18           ;To hold low-byte of divisor
+.DEF   BH = R19           ;To hold high-byte of divisor   
+.DEF    C = R20           ;Bit Counter
+
+        LDI AL,LOW(420)   ;Load low-byte of dividend into AL
+        LDI AH,HIGH(420)  ;Load HIGH-byte of dividend into AH
+        LDI BL,LOW(10)    ;Load low-byte of divisor into BL
+        LDI BH,HIGH(10)   ;Load high-byte of divisor into BH
+DIV1616:
+        MOVW ANSH:ANSL,AH:AL ;Copy dividend into answer
+        LDI C,17          ;Load bit counter
+        SUB REML,REML     ;Clear Remainder and Carry
+        CLR REMH          ;
+LOOP:   ROL ANSL          ;Shift the answer to the left
+        ROL ANSH          ;
+        DEC C             ;Decrement Counter
+         BREQ DONE        ;Exit if sixteen bits done
+        ROL REML          ;Shift remainder to the left
+        ROL REMH          ;
+        SUB REML,BL       ;Try to subtract divisor from remainder
+        SBC REMH,BH
+         BRCC SKIP        ;If the result was negative then
+        ADD REML,BL       ;reverse the subtraction to try again
+        ADC REMH,BH       ;
+        CLC               ;Clear Carry Flag so zero shifted into A 
+         RJMP LOOP        ;Loop Back
+SKIP:   SEC               ;Set Carry Flag to be shifted into A
+         RJMP LOOP
+DONE:RET

@@ -1,0 +1,66 @@
+		.def	drem16ul=r14     ;SO DU LOW
+		.def	drem16uh=r15     ;SO DU HIGH
+		.def	dres16ul=r22	;KET QUA LOW
+		.def	dres16uh=r23	;KET QUA HIGH
+		.def	dd16ul	=r22		;SO BI CHIA
+		.def	dd16uh	=r23		;SO BI CHIA HIGH
+		.def	dv16ul	=r18		;SO CHIA LOW
+		.def	dv16uh	=r19		;SO CHIA HIGH
+		.def	dcnt16u	=r20		;COUNTER 
+
+
+
+		ldi	r18,low(10000)			
+		ldi	r19,high(10000)	;SO CHIA	
+		call div16u
+		st z+, r22 ;NGHIN
+		mov r22,r14
+		mov r23,r15
+		clr r14
+		clr r15
+		ldi	r18,low(1000)			
+		ldi	r19,high(1000)	;SO CHIA	
+		call div16u
+		st z+, r22 ;NGHIN
+		mov r22,r14
+		mov r23,r15
+		clr r14
+		clr r15
+		ldi	r18,low(100)			
+		ldi	r19,high(100)			
+		call div16u	
+		st z+, r22 ;TRAM
+		mov r22,r14
+		mov r23,r15
+		clr r14
+		clr r15
+		ldi	r18,low(10)			;load r19:r18
+		ldi	r19,high(10)		;with 1000
+		call div16u	
+		st z+, r22 ;CHUC
+		st z, r14 ;DON VI
+		mov r22, r4
+		mov r23, r5 
+		RET
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+		div16u:
+		clr	drem16ul		
+		sub	drem16uh,drem16uh	
+		ldi	dcnt16u,17		
+d16u_1:	rol	dd16ul			
+		rol	dd16uh
+		dec	dcnt16u			
+		brne	d16u_2			
+		ret				
+d16u_2:	rol	drem16ul		
+		rol	drem16uh
+		sub	drem16ul,dv16ul		
+		sbc	drem16uh,dv16uh		
+		brcc	d16u_3			
+		add	drem16ul,dv16ul		
+		adc	drem16uh,dv16uh
+		clc				
+		rjmp	d16u_1			
+d16u_3:	sec				
+		rjmp	d16u_1
+		ret

@@ -1,0 +1,330 @@
+.org 0
+rjmp main
+.org $1a
+rjmp timer1_compa_isr
+.org 0x28
+rjmp usart0_rd_isr
+
+
+.org 0x40
+main:			
+				sbi ddrd, 0
+				cbi portd, 0
+				call lcd4bit
+				call uart_init
+				call timer1_init
+				call setuplednum
+				call led7seg_portinit
+				sei
+				ldi r16,(1<<rxen0)|(1<<txen0)|(1<<rxcie0)
+				sts ucsr0b,r16
+				ldi r16,(1<<ocie1a)
+				sts timsk1,r16
+start:			rjmp start
+
+uart_init:	
+	push r16
+	ldi r16,(1<<ucsz01)|(1<<ucsz00)
+	sts ucsr0c, r16
+	ldi r16,0
+	sts ubrr0h, r16
+	ldi r16,51
+	sts ubrr0l, r16
+	cbi ddrd, 0
+	sbi portd, 0
+	pop r16
+	ret
+
+timer1_init:
+		ldi r17,high(5000)
+		sts ocr1ah,r17
+		ldi r17,low(5000)
+		sts ocr1al,r17
+		ldi r17, 0
+		sts tccr1a, r17
+		ldi r17,(1<<cs11)|(1<<wgm12)
+		sts tccr1b,r17
+		ldi r17, 0
+		sts tccr1c, r17
+		ret
+//////////////////////////////////////////////////////////////////
+setuplednum:
+.equ addr1 = $500
+
+			ldi r26,1
+			ldi zh, high(LED7segValue)
+			ldi zl, low(LED7segValue)
+nodone:		st z+, r26
+			inc r26
+			cpi r26,5
+			brne nodone
+			dec r26
+			ldi yh, high(LED7segValue)
+			ldi yl, low(LED7segValue)
+			ret
+
+led7seg_portinit:
+		push r20
+		ser r20 
+		out DDRB, r20
+		clr r20
+		sbi ddrd, nLE0Pin
+		sbi ddrd, nLE1Pin
+		pop r20
+		ret
+
+display_7seg:
+		push r16
+		ldi zh,high(table_7seg_data<<1) 
+		ldi zl,low(table_7seg_data<<1)
+		clr r16
+		add r30, r27; r27 chua gia tri hien led
+		adc r31,r16
+		lpm r16, z
+		out LED7SEGPORT,r16
+		sbi LED7SEGLatchPORT,nLE0Pin
+		nop
+		cbi LED7SEGLatchPORT,nLE0Pin
+		ldi zh,high(table_7seg_control<<1)
+		ldi zl,low(table_7seg_control<<1) 
+		clr r16
+		add r30, r26; r26 chua gia tri vi tri led
+		dec r30
+		adc r31,r16
+		lpm r16, z
+		out LED7SEGPORT,r16
+		sbi LED7SEGLatchPORT,nLE1Pin
+		nop
+		cbi LED7SEGLatchPORT,nLE1Pin
+		pop r16
+		ret
+
+tatled: push r20
+		ldi r20,$ff
+		out portb, r20
+		sbi LED7SEGLatchPORT,nLE0Pin
+		nop
+		cbi LED7SEGLatchPORT,nLE0Pin
+		pop r20
+		ret
+//////////////////////////////////////////////////////////////////
+
+usart0_rd_isr:
+		push r18
+		push r19
+		push r17
+		in r17, sreg 
+		push r17
+		clc
+		clr r18
+		inc r22
+		adc r23, r18
+		mov r4, r22
+		mov r5, r23
+		///////////////
+		ldi zh, high(LED7segValue)
+		ldi zl, low(LED7segValue)
+		ldi	r18,LOW(1000)			
+		ldi	r19,HIGH(1000)		
+		call div16u
+		st z+, r22
+		mov r22,r14
+		mov r23,r15
+		clr r14
+		clr r15
+		ldi	r18,LOW(100)			
+		ldi	r19,HIGH(100)			
+		call div16u	
+		st z+, r22
+		mov r22,r14
+		mov r23,r15
+		clr r14
+		clr r15
+		ldi	r18,LOW(10)			;load r19:r18
+		ldi	r19,HIGH(10)		;with 1000
+		call div16u	
+		st z+, r22
+		st z, r14
+		mov r22, r4
+		mov r23, r5
+		////////////////
+		lds r17, udr0
+		call datwrite
+		pop r17
+		out sreg, r17
+		pop r17
+		pop r19
+		pop r18
+		reti
+
+timer1_compa_isr:
+		push r17
+		in r17, sreg
+		push r17
+		lds r17, tccr1b
+		ldi r16, (1<<cs11) 
+		com r16
+		and r17, r16
+		sts tccr1b, r17 ;TAT TIMER
+		call tatled
+fine1:	ld r27,y+ ;R27 CHUA DATA
+		call display_7seg
+		dec r26 ;SO LAN QUET LED
+		cpi r26,0
+		brne skip
+		ldi yh, high(LED7segValue)
+		ldi yl, low(LED7segValue)
+		ldi r26,4
+skip:	ldi r17,(1<<cs11)|(1<<wgm12)
+		sts tccr1b,r17 ;KHOI DONG LAI TIMER
+		pop r17
+		out sreg, r17
+		pop r17
+		reti
+
+//////////////////////////////////////////////////////////////////
+div16u:
+.def	drem16uL=r14
+.def	drem16uH=r15
+.def	dres16uL=r22
+.def	dres16uH=r23
+.def	dd16uL	=r22
+.def	dd16uH	=r23
+.def	dv16uL	=r18
+.def	dv16uH	=r19
+.def	dcnt16u	=r20
+		clr	drem16uL		
+		sub	drem16uH,drem16uH	
+		ldi	dcnt16u,17		
+d16u_1:	rol	dd16uL			
+		rol	dd16uH
+		dec	dcnt16u			
+		brne	d16u_2			
+		ret				
+d16u_2:	rol	drem16uL		
+		rol	drem16uH
+		sub	drem16uL,dv16uL		
+		sbc	drem16uH,dv16uH		
+		brcc	d16u_3			
+		add	drem16uL,dv16uL		
+		adc	drem16uH,dv16uH
+		clc				
+		rjmp	d16u_1			
+d16u_3:	sec				
+		rjmp	d16u_1
+		ret
+
+lcd4bit:
+			ldi r16,$ff
+			out ddra,r16
+			clr r16
+			cbi porta ,0;porta 0 = rs
+			cbi porta ,1;porta 1 = rw
+			cbi porta ,2;porta 2 = e
+		
+			ldi r21,250
+			call delay
+
+			ldi r17,$30
+			call cmdwrite
+			ldi r21,50
+			call delay
+
+			ldi r17,$30
+			call cmdwrite
+			ldi r21,50
+			call delay
+
+			ldi r17,$30
+			call cmdwrite
+			ldi r21,50
+			call delay
+
+			ldi r17,$32
+			call cmdwrite
+			ldi r21,50
+			call delay
+
+			ldi r17,$28
+			call cmdwrite
+			ldi r21,50
+			call delay
+
+			ldi r17,$01
+			call cmdwrite
+			ldi r21,50
+			call delay
+
+			ldi r17,$0f
+			call cmdwrite
+			ldi r21,50
+			call delay
+
+			ldi r17,$06
+			call cmdwrite
+			ldi r21,50
+			call delay
+			ret
+
+cmdwrite:	
+			cbi porta,0
+			cbi porta,1
+			mov r18,r17
+			andi r17,$f0
+			call enable
+			mov r17,r18
+			swap r17
+			andi r17,$f0
+			call enable
+			ret
+datwrite:	
+			sbi porta,0
+			cbi porta,1
+			mov r18,r17
+			andi r17,$f0
+			ori r17,1
+			call enable
+			mov r17,r18
+			swap r17
+			andi r17,$f0
+			ori r17,1
+			call enable
+			ret
+
+enable:		out porta ,r17
+			sbi porta ,2
+			nop
+			nop
+			cbi porta ,2
+			ldi r21,50
+			call delay
+			ret
+delay:
+ll1:		call	delay100us	
+			dec		r21
+			brne	ll1
+			ret
+
+delay100us:
+		push	r21
+		ldi		r21,200
+ll2:	nop 		
+        dec		r21 	
+		brne	ll2
+		pop		r21
+        ret
+//////////////////////////////////////////////////////////////////
+.equ LED7SEGPORT = PORTb
+.equ LED7SEGDIR = DDRb
+.equ LED7SEGLatchPORT = PORTd
+.equ LED7SEGLatchDIR = DDRd
+.equ nLE0Pin = 4
+.equ nLE1Pin = 5
+.dseg
+LED7segValue : .BYTE 4
+.cseg
+table_7seg_data:
+.DB 0XC0,0XF9,0XA4,0XB0,0X99,0X92,0X82,0XF8,0X80,0X90,0X88,0X83,0XC6,0XA1,0X86,0X8E
+
+table_7seg_control:
+.DB 0b00001110,0b00001101, 0b00001011, 0b00000111

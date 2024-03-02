@@ -1,0 +1,18 @@
+;CTC CHIA SỐ 8 BIT CHO SỐ 8 BIT
+;****************************************************************************************
+;INPUT: R17 <-- SỐ BỊ CHIA
+; R16 <-- SỐ CHIA
+;OUTPUT: R17=THƯƠNG SỐ, R16=SỐ DƯ
+;****************************************************************************************
+DIV8_8:
+PUSH R15
+CLR R15 ;R15=thương số
+GT_DV: SUB R17,R16 ;trừ số bị chia cho số chia
+BRCS LT_DV ;C=1 không còn chia được
+INC R15 ;tăng thương số thêm 1
+RJMP GT_DV ;thực hiện tiếp
+LT_DV: ADD R17,R16 ;lấy lại dư số
+MOV R16,R17 ;R16=dư số
+MOV R17,R15 ;R17=thương số
+POP R15
+RET

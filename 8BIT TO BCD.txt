@@ -1,0 +1,24 @@
+; CTC CHUYỂN SỐ NHỊ PHÂN 8 BIT SANG SỐ BCD
+;****************************************************************************************
+;INPUT: R17<-- SỐ NHỊ PHÂN 8 BIT
+;OUTPUT:SỐ BCD NÉN 3 DIGIT(DECADE): BCD2_BCD1_BCD0
+; R17:R16= BCD2:BCD1_BCD0
+;SỬ DỤNG CTC DIV8_8: SỐ CHIA = 10(R16)
+;****************************************************************************************
+BIN8_BCD:
+PUSH R20
+PUSH R21
+CLR R20 ;xóa các thanh ghi kết quả
+CLR R21
+LDI R16,10 ;R16=số chia
+RCALL DIV8_8 ;ctc chia 2 số nhị phân 8 bit
+MOV R20,R16 ;R20=dư số phép chia đầu
+LDI R16,10
+RCALL DIV8_8
+SWAP R16 ;chuyển dư số phép chia đầu lên cao
+OR R20,R16 ;d|n dư số phép chia lần 2 vào 4 bit thấp
+MOV R16,R20
+MOV R21,R17 ;R21=dư số sau cùng
+POP R21
+POP R20
+RET
